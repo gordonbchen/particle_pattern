@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 import turtle
+from argparse import ArgumentParser
 from random import randint
 
 import numpy as np
@@ -36,12 +37,8 @@ class SimArea:
     def update(self) -> None:
         self.screen.update()
 
-    @staticmethod
-    def run_mainloop() -> None:
-        turtle.mainloop()
-
-    def add_particle(self) -> None:
-        particle = Particle(self)
+    def add_particle(self, pos: np.ndarray | None = None) -> None:
+        particle = Particle(self, pos=pos)
         self.update_cell(particle)
 
     def update_cell(self, particle: Particle) -> None:
@@ -63,6 +60,38 @@ class SimArea:
 
     def _clamp(self, x: int, lower: int, upper: int) -> int:
         return min(max(lower, x), upper)
+
+    def simulate_step(self) -> None:
+        for particles in self.cells.values():
+            particles = list(particles)
+            for i, particle in enumerate(particles):
+                particle.update_pos()
+
+                # TODO: Check collisions in neighboring cells.
+                for other_particle in particles[i + 1 :]:
+                    particle.collide(other_particle)
+
+        self.update()
+
+    def draw(self) -> None:
+        print("Left click to add particle. Right click to QUIT.")
+
+        self.screen.onclick(
+            lambda x, y: self.add_particle(np.array([x, y], dtype=np.float32)), btn=1
+        )
+
+        self.cont_draw = True
+
+        def quit_draw(*args) -> None:
+            self.cont_draw = False
+
+        self.screen.onclick(quit_draw, btn=3)
+
+        while self.cont_draw:
+            self.update()
+            time.sleep(0.05)
+
+        del self.cont_draw
 
     def close(self) -> None:
         self.screen.bye()
@@ -89,25 +118,36 @@ class Particle:
         self.radius = (20 / 2) * size_factor  # Default diameter is 20 pixels.
 
         self.pos = (
-            np.array([randint(*sim_area.x_bounds), randint(*sim_area.y_bounds)], dtype=np.float32)
+            np.array(
+                [
+                    randint(sim_area.x_bounds[0] + self.radius, sim_area.x_bounds[1] - self.radius),
+                    randint(sim_area.y_bounds[0] + self.radius, sim_area.y_bounds[1] - self.radius),
+                ],
+                dtype=np.float32,
+            )
             if pos is None
             else pos
         )
+        self.set_pos(self.pos)
         self.vel = np.random.normal(0, 1.5, size=2) if vel is None else vel
+
+    def set_pos(self, pos: np.ndarray) -> None:
+        self.turtle.setpos(pos)
 
     def update_pos(self) -> None:
         self.pos += self.vel
-        self.turtle.setpos(self.pos)
+        self.set_pos(self.pos)
         self.sim_area.update_cell(self)
+        self.collide_container()
 
-        # Handle container collisions.
-        if not self._in_range(self.pos[0], *self.sim_area.x_bounds):
+    def collide_container(self) -> None:
+        if not self._coord_in_bounds(self.pos[0], *self.sim_area.x_bounds):
             self.vel[0] *= -1
-        if not self._in_range(self.pos[1], *self.sim_area.y_bounds):
+        if not self._coord_in_bounds(self.pos[1], *self.sim_area.y_bounds):
             self.vel[1] *= -1
 
-    def _in_range(self, x: float, lower: int, upper: int) -> bool:
-        return (x >= lower) and (x < upper)
+    def _coord_in_bounds(self, x: float, lower: int, upper: int) -> bool:
+        return (x - self.radius >= lower) and (x + self.radius <= upper)
 
     def set_cell(self, new_cell: tuple[int, int]) -> None:
         self.cell = new_cell
@@ -120,29 +160,42 @@ class Particle:
             self.vel, other.vel = other.vel, self.vel
 
 
+def parse_args() -> str:
+    parser = ArgumentParser()
+    parser.add_argument(
+        "--mode",
+        default="random",
+        choices=["random", "draw", "image"],
+        help="Add random particles.",
+    )
+
+    args = parser.parse_args()
+    return args.mode
+
+
 if __name__ == "__main__":
-    t0 = time.time()
+    mode = parse_args()
 
     sim_area = SimArea(width=1_000, height=800, cell_grid=(10, 8), title="Particle Simulation")
 
-    for i in range(400):
-        sim_area.add_particle()
+    if mode == "random":
+        for i in range(400):
+            sim_area.add_particle()
+    elif mode == "draw":
+        sim_area.draw()
+    elif mode == "image":
+        # TODO: add image conv mode.
+        pass
 
+    t0 = time.time()
     SIM_STEPS = 1_024
     for i in range(SIM_STEPS):
-        for particles in sim_area.cells.values():
-            particles = list(particles)
-            for i, particle in enumerate(particles):
-                particle.update_pos()
-
-                # TODO: Check collisions in neighboring cells.
-                for other_particle in particles[i + 1 :]:
-                    particle.collide(other_particle)
-
-        sim_area.update()
-
+        sim_area.simulate_step()  # TODO: control frame rate.
     sim_area.close()
 
     elapsed_time = time.time() - t0
     print(f"Elapsed time: {elapsed_time} sec")
     print(f"Frame rate: {SIM_STEPS / elapsed_time} fps")
+
+
+# TODO: only particle container class.
