@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 import turtle
 from random import randint
 
@@ -60,8 +61,11 @@ class SimArea:
         cell_j = self._clamp(cell_j, 0, self.cell_grid[1] - 1)
         return cell_i, cell_j
 
-    def _clamp(self, x: int, lower: int, upper: int):
+    def _clamp(self, x: int, lower: int, upper: int) -> int:
         return min(max(lower, x), upper)
+
+    def close(self) -> None:
+        self.screen.bye()
 
 
 class Particle:
@@ -110,25 +114,35 @@ class Particle:
 
     def collide(self, other: Particle) -> None:
         """Assumes equal mass particles and head-on elastic collisions."""
-        # TODO: fix sticking.
+        # TODO: True 2D elastic collisions. Fix sticking problem.
         dist = ((self.pos - other.pos) ** 2.0).sum() ** 0.5
         if (self.radius + other.radius) > dist:
             self.vel, other.vel = other.vel, self.vel
 
 
 if __name__ == "__main__":
+    t0 = time.time()
+
     sim_area = SimArea(width=1_000, height=800, cell_grid=(10, 8), title="Particle Simulation")
 
-    for i in range(500):
+    for i in range(400):
         sim_area.add_particle()
 
-    for i in range(1_000):
+    SIM_STEPS = 1_024
+    for i in range(SIM_STEPS):
         for particles in sim_area.cells.values():
-            particle_list = list(particles)
-            for i, particle in enumerate(particle_list):
+            particles = list(particles)
+            for i, particle in enumerate(particles):
                 particle.update_pos()
 
-                for other_particle in particle_list[i + 1 :]:
+                # TODO: Check collisions in neighboring cells.
+                for other_particle in particles[i + 1 :]:
                     particle.collide(other_particle)
 
         sim_area.update()
+
+    sim_area.close()
+
+    elapsed_time = time.time() - t0
+    print(f"Elapsed time: {elapsed_time} sec")
+    print(f"Frame rate: {SIM_STEPS / elapsed_time} fps")
