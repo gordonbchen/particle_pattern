@@ -52,13 +52,13 @@ class ParticleContainer:
         self.positions += self.velocities
 
         # TODO: 2D elastic collision math.
-        # OPTIM: Only check collisions in neighboring cells.
-        # OPTIM: Parallelize cells.
+        # TODO: Only check collisions in neighboring cells.
+        # TODO: Parallelize cells.
         for i, pos in enumerate(self.positions):
             dists = ((self.positions[i + 1 :] - pos) ** 2.0).sum(axis=-1) ** 0.5
             too_close = dists < (2 * self.settings.particle_radius)
 
-        # OPTIM: Only check outer cells.
+        # TODO: Only check outer cells.
         for i, bound in enumerate(self.settings.screen_dim):
             too_low = (self.positions[:, i] - self.settings.particle_radius) < 0
             too_high = (self.positions[:, i] + self.settings.particle_radius) > bound
