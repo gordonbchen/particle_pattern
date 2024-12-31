@@ -8,11 +8,14 @@ import pygame
 
 @dataclass
 class Settings:
-    screen_dim: np.ndarray = np.array([1_000, 800])
+    screen_dim: np.ndarray = np.array([1_000, 800], dtype=np.int32)
     max_frame_rate: int = 60
 
     particle_radius: int = 5
     n_particles: int = 100
+
+    cell_dim: np.ndarray = np.array([100, 100], dtype=np.int32)
+    cell_grid: np.ndarray = screen_dim // cell_dim
 
     velocity_scale: float = 2.0
 
@@ -53,21 +56,36 @@ class ParticleContainer:
         self.clock = pygame.time.Clock()
 
     def simulate_step(self) -> None:
-        # TODO: 2D elastic collision math.
-        # TODO: Only check collisions in neighboring cells.
-        # TODO: Parallelize cells.
-        for i, pos in enumerate(self.positions):
-            for j, other_pos in enumerate(self.positions[i + 1 :]):
-                dist = ((pos - other_pos) ** 2.0).sum() ** 0.5
-                if dist < (2 * self.settings.particle_radius):
-                    self.velocities[[i, i + 1 + j]] = self.velocities[[i + 1 + j, i]]
+        # Handle particle collisions.
+        cells = (self.positions.clip(0, self.settings.screen_dim) // self.settings.cell_dim).astype(
+            np.int32
+        )
 
+        # TODO: Parallelize cells. GPU?
+        for cell_i in range(int(self.settings.cell_grid[0])):
+            for cell_j in range(int(self.settings.cell_grid[1])):
+                cell = np.array([cell_i, cell_j], dtype=np.int32)
+                cell_mask = (cells == cell).all(axis=1)
+
+                # TODO: Check collisions in neighboring cells.
+                positions, velocities = self.positions[cell_mask], self.velocities[cell_mask]
+
+                # TODO: 2D elastic collision math.
+                for i, pos in enumerate(positions):
+                    dists = ((positions[i:] - pos) ** 2.0).sum(axis=-1) ** 0.5
+                    too_close = dists < (2 * self.settings.particle_radius)
+                    velocities[i:][too_close] = np.roll(velocities[i:][too_close], shift=-1, axis=0)
+
+                self.velocities[cell_mask] = velocities
+
+        # Handle wall collisions.
         # TODO: Only check outer cells.
         too_low = (self.positions - self.settings.particle_radius) < 0
         too_high = (self.positions + self.settings.particle_radius) > self.settings.screen_dim
         reverse_mask = (too_low & (self.velocities < 0)) | (too_high & (self.velocities > 0))
         self.velocities[reverse_mask] *= -1.0
 
+        # Move particles.
         self.positions += self.velocities
 
     def draw_particles(self) -> None:
