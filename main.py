@@ -13,12 +13,12 @@ class Settings:
     max_frame_rate: int = 60
 
     particle_radius: int = 5
-    n_particles: int = 100
+    n_particles: int = 300
 
     cell_dim: np.ndarray = np.array([100, 100], dtype=np.int32)
     cell_grid: np.ndarray = screen_dim // cell_dim
 
-    velocity_scale: float = 2.0
+    velocity_scale: float = 1.0
 
 
 class Colors:
@@ -72,14 +72,7 @@ class ParticleContainer:
 
                 # TODO: Check collisions in neighboring cells.
                 positions, velocities = self.positions[cell_mask], self.velocities[cell_mask]
-
-                # TODO: 2D elastic collision math.
-                for i, pos in enumerate(positions):
-                    dists = LA.norm(positions[i:] - pos, axis=-1)
-                    too_close = dists < (2 * self.settings.particle_radius)
-                    velocities[i:][too_close] = np.roll(velocities[i:][too_close], shift=-1, axis=0)
-
-                self.velocities[cell_mask] = velocities
+                self.velocities[cell_mask] = self.true_collide(positions, velocities)
 
         # Handle wall collisions.
         outer_mask = ((cells == 0) | (cells == (settings.cell_grid - 1))).any(axis=-1)
@@ -92,6 +85,34 @@ class ParticleContainer:
 
         # Move particles.
         self.positions += self.velocities
+
+    def true_collide(self, positions: np.ndarray, velocities: np.ndarray) -> np.ndarray:
+        """True 2d elastic collision physics."""
+        # TODO: Fix particles spinning with each other.
+        for i, pos in enumerate(positions):
+            pos_delta = positions[i + 1 :] - pos
+            dists = LA.norm(pos_delta, axis=-1)
+            too_close_inds = np.where(dists < (2 * self.settings.particle_radius))[0]
+            if len(too_close_inds) == 0:
+                continue
+
+            unit_vectors = pos_delta[too_close_inds] / (
+                dists[too_close_inds][:, None] + np.finfo(np.float32).eps
+            )
+            for j, u in zip(too_close_inds, unit_vectors):
+                new_parallel_comp = (velocities[i] - velocities[i + 1 :][j]).dot(u) * u
+                velocities[i] -= new_parallel_comp
+                velocities[i + 1 :][j] += new_parallel_comp
+
+        return velocities
+
+    def swap_collide(self, positions: np.ndarray, velocities: np.ndarray) -> np.ndarray:
+        """Swap velocities on collision. Approximates all collisions as head-on."""
+        for i, pos in enumerate(positions):
+            dists = LA.norm(positions[i:] - pos, axis=-1)
+            too_close = dists < (2 * self.settings.particle_radius)
+            velocities[i:][too_close] = np.roll(velocities[i:][too_close], shift=-1, axis=0)
+        return velocities
 
     def draw_particles(self) -> None:
         for position in self.positions:
