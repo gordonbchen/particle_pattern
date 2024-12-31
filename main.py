@@ -57,8 +57,10 @@ class ParticleContainer:
 
     def simulate_step(self) -> None:
         # Handle particle collisions.
-        cells = (self.positions.clip(0, self.settings.screen_dim) // self.settings.cell_dim).astype(
-            np.int32
+        cells = (
+            (self.positions // self.settings.cell_dim)
+            .astype(np.int32)
+            .clip(0, self.settings.cell_grid - 1)
         )
 
         # TODO: Parallelize cells. GPU?
@@ -79,11 +81,13 @@ class ParticleContainer:
                 self.velocities[cell_mask] = velocities
 
         # Handle wall collisions.
-        # TODO: Only check outer cells.
-        too_low = (self.positions - self.settings.particle_radius) < 0
-        too_high = (self.positions + self.settings.particle_radius) > self.settings.screen_dim
-        reverse_mask = (too_low & (self.velocities < 0)) | (too_high & (self.velocities > 0))
-        self.velocities[reverse_mask] *= -1.0
+        outer_mask = ((cells == 0) | (cells == (settings.cell_grid - 1))).any(axis=-1)
+        outer_positions, outer_velocities = self.positions[outer_mask], self.velocities[outer_mask]
+        too_low = (outer_positions - self.settings.particle_radius) < 0
+        too_high = (outer_positions + self.settings.particle_radius) > self.settings.screen_dim
+        reverse_mask = (too_low & (outer_velocities < 0)) | (too_high & (outer_velocities > 0))
+        outer_velocities[reverse_mask] *= -1.0
+        self.velocities[outer_mask] = outer_velocities
 
         # Move particles.
         self.positions += self.velocities
