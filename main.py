@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+import numpy.linalg as LA
 import pygame
 
 
@@ -74,7 +75,7 @@ class ParticleContainer:
 
                 # TODO: 2D elastic collision math.
                 for i, pos in enumerate(positions):
-                    dists = ((positions[i:] - pos) ** 2.0).sum(axis=-1) ** 0.5
+                    dists = LA.norm(positions[i:] - pos, axis=-1)
                     too_close = dists < (2 * self.settings.particle_radius)
                     velocities[i:][too_close] = np.roll(velocities[i:][too_close], shift=-1, axis=0)
 
