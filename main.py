@@ -11,21 +11,21 @@ from scipy.signal import convolve2d
 
 class Settings:
     screen_dim: np.ndarray = np.array([1_000, 800], dtype=np.int32)
-    max_frame_rate: int = 60
+    max_frame_rate: int = 120
 
     particle_radius: int = 5
-    n_particles: int = 1_000
+    n_particles: int = 500
 
     cell_dim: np.ndarray = np.array([100, 100], dtype=np.int32)
     cell_grid: np.ndarray = screen_dim // cell_dim
 
     velocity_scale: float = 1.0
+    time_step: float = 0.2
 
 
 class Colors:
     BLACK = (0, 0, 0)
     WHITE = (255, 255, 255)
-    GRAY = (200, 200, 200)
 
 
 class ParticleContainer:
@@ -58,6 +58,7 @@ class ParticleContainer:
         pygame.display.set_caption("Particle Simulation")
         self.clock = pygame.time.Clock()
 
+    # TODO: make simulation perfectly reversible.
     def simulate_step(self) -> None:
         # Handle particle collisions.
         cells = (
@@ -74,48 +75,48 @@ class ParticleContainer:
 
                 # TODO: Check collisions in neighboring cells.
                 positions, velocities = self.positions[cell_mask], self.velocities[cell_mask]
-                self.velocities[cell_mask] = self.true_collide(positions, velocities)
+                self.velocities[cell_mask] = self.collide(positions, velocities)
 
         # Handle wall collisions.
         outer_mask = ((cells == 0) | (cells == (settings.cell_grid - 1))).any(axis=-1)
         outer_positions, outer_velocities = self.positions[outer_mask], self.velocities[outer_mask]
         too_low = (outer_positions - self.settings.particle_radius) < 0
         too_high = (outer_positions + self.settings.particle_radius) > self.settings.screen_dim
+
         reverse_mask = (too_low & (outer_velocities < 0)) | (too_high & (outer_velocities > 0))
+
         outer_velocities[reverse_mask] *= -1.0
         self.velocities[outer_mask] = outer_velocities
 
         # Move particles.
-        self.positions += self.velocities
+        self.positions += self.velocities * self.settings.time_step
 
-    def true_collide(self, positions: np.ndarray, velocities: np.ndarray) -> np.ndarray:
-        """True 2d elastic collision physics."""
-        # TODO: fix particles spinning.
+    def collide(self, positions: np.ndarray, velocities: np.ndarray) -> np.ndarray:
+        """2d elastic collision physics."""
         dists = LA.norm(positions[:, None] - positions, axis=-1)
 
         for i, j in zip(*np.where(dists < (2 * self.settings.particle_radius))):
             if j <= i:
                 continue
 
-            unit_vector = (positions[j] - positions[i]) / (dists[i, j] + np.finfo(np.float32).eps)
-            new_parallel = (velocities[i] - velocities[j]).dot(unit_vector) * unit_vector
-            velocities[i] -= new_parallel
-            velocities[j] += new_parallel
+            unit_vector = (positions[i] - positions[j]) / (dists[i, j] + np.finfo(np.float32).eps)
+            rel_velocity = (velocities[i] - velocities[j]).dot(unit_vector)
+
+            # Only handle collision if particles are moving towards each other.
+            if rel_velocity < 0:
+                new_parallel = rel_velocity * unit_vector
+                velocities[i] -= new_parallel
+                velocities[j] += new_parallel
 
         return velocities
 
-    def swap_collide(self, positions: np.ndarray, velocities: np.ndarray) -> np.ndarray:
-        """Swap velocities on collision. Approximates all collisions as head-on."""
-        for i, pos in enumerate(positions):
-            dists = LA.norm(positions[i:] - pos, axis=-1)
-            too_close = dists < (2 * self.settings.particle_radius)
-            velocities[i:][too_close] = np.roll(velocities[i:][too_close], shift=-1, axis=0)
-        return velocities
+    def reverse_velocities(self) -> None:
+        self.velocities *= -1
 
     def draw_particles(self) -> None:
         for position in self.positions:
             pygame.draw.circle(
-                self.screen, Colors.GRAY, position.astype(np.int32), self.settings.particle_radius
+                self.screen, Colors.BLACK, position.astype(np.int32), self.settings.particle_radius
             )
 
     def simulate(self) -> None:
@@ -129,6 +130,8 @@ class ParticleContainer:
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_SPACE:
                         pause = not pause
+                    if event.key == pygame.K_r:
+                        self.reverse_velocities()
 
             self.screen.fill(Colors.WHITE)
             self.draw_particles()
