@@ -26,7 +26,6 @@ class Settings:
 class Colors:
     BLACK = (0, 0, 0)
     WHITE = (255, 255, 255)
-    GRAY = (200, 200, 200)
 
 
 class ParticleContainer:
@@ -117,7 +116,7 @@ class ParticleContainer:
     def draw_particles(self) -> None:
         for position in self.positions:
             pygame.draw.circle(
-                self.screen, Colors.GRAY, position.astype(np.int32), self.settings.particle_radius
+                self.screen, Colors.BLACK, position.astype(np.int32), self.settings.particle_radius
             )
 
     def simulate(self) -> None:
