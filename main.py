@@ -58,7 +58,8 @@ class ParticleContainer:
         pygame.display.set_caption("Particle Simulation")
         self.clock = pygame.time.Clock()
 
-    def simulate_step(self) -> None:
+    # TODO: make simulation perfectly reversible.
+    def simulate_step(self, reverse: bool = False) -> None:
         # Handle particle collisions.
         cells = (
             (self.positions // self.settings.cell_dim)
@@ -81,12 +82,16 @@ class ParticleContainer:
         outer_positions, outer_velocities = self.positions[outer_mask], self.velocities[outer_mask]
         too_low = (outer_positions - self.settings.particle_radius) < 0
         too_high = (outer_positions + self.settings.particle_radius) > self.settings.screen_dim
-        reverse_mask = (too_low & (outer_velocities < 0)) | (too_high & (outer_velocities > 0))
+
+        # TODO: fix wall collision for reverse.
+        # reverse_mask = (too_low & (outer_velocities < 0)) | (too_high & (outer_velocities > 0))
+        reverse_mask = too_low | too_high
+
         outer_velocities[reverse_mask] *= -1.0
         self.velocities[outer_mask] = outer_velocities
 
         # Move particles.
-        self.positions += self.velocities
+        self.positions += self.velocities * ((-1) ** (reverse))
 
     def true_collide(self, positions: np.ndarray, velocities: np.ndarray) -> np.ndarray:
         """True 2d elastic collision physics."""
@@ -121,6 +126,7 @@ class ParticleContainer:
     def simulate(self) -> None:
         cont = True
         pause = True
+        reverse = False
 
         while cont:
             for event in pygame.event.get():
@@ -129,11 +135,13 @@ class ParticleContainer:
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_SPACE:
                         pause = not pause
+                    if event.key == pygame.K_r:
+                        reverse = not reverse
 
             self.screen.fill(Colors.WHITE)
             self.draw_particles()
             if not pause:
-                self.simulate_step()
+                self.simulate_step(reverse)
             pygame.display.flip()
 
             self.clock.tick(self.settings.max_frame_rate)
