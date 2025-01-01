@@ -76,7 +76,7 @@ class ParticleContainer:
 
                 # TODO: Check collisions in neighboring cells.
                 positions, velocities = self.positions[cell_mask], self.velocities[cell_mask]
-                self.velocities[cell_mask] = self.true_collide(positions, velocities)
+                self.velocities[cell_mask] = self.collide(positions, velocities)
 
         # Handle wall collisions.
         outer_mask = ((cells == 0) | (cells == (settings.cell_grid - 1))).any(axis=-1)
@@ -92,8 +92,8 @@ class ParticleContainer:
         # Move particles.
         self.positions += self.velocities * self.settings.time_step
 
-    def true_collide(self, positions: np.ndarray, velocities: np.ndarray) -> np.ndarray:
-        """True 2d elastic collision physics."""
+    def collide(self, positions: np.ndarray, velocities: np.ndarray) -> np.ndarray:
+        """2d elastic collision physics."""
         dists = LA.norm(positions[:, None] - positions, axis=-1)
 
         for i, j in zip(*np.where(dists < (2 * self.settings.particle_radius))):
@@ -109,14 +109,6 @@ class ParticleContainer:
                 velocities[i] -= new_parallel
                 velocities[j] += new_parallel
 
-        return velocities
-
-    def swap_collide(self, positions: np.ndarray, velocities: np.ndarray) -> np.ndarray:
-        """Swap velocities on collision. Approximates all collisions as head-on."""
-        for i, pos in enumerate(positions):
-            dists = LA.norm(positions[i:] - pos, axis=-1)
-            too_close = dists < (2 * self.settings.particle_radius)
-            velocities[i:][too_close] = np.roll(velocities[i:][too_close], shift=-1, axis=0)
         return velocities
 
     def reverse_velocities(self) -> None:
