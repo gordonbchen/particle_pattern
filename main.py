@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from argparse import ArgumentParser
-from dataclasses import dataclass
 
 import numpy as np
 import numpy.linalg as LA
@@ -10,7 +9,6 @@ from PIL import Image
 from scipy.signal import convolve2d
 
 
-@dataclass
 class Settings:
     screen_dim: np.ndarray = np.array([1_000, 800], dtype=np.int32)
     max_frame_rate: int = 60
