@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from argparse import ArgumentParser
 from dataclasses import dataclass
 
 import numpy as np
+import numpy.linalg as LA
 import pygame
+from PIL import Image
+from scipy.signal import convolve2d
 
 
 @dataclass
@@ -12,17 +16,18 @@ class Settings:
     max_frame_rate: int = 60
 
     particle_radius: int = 5
-    n_particles: int = 100
+    n_particles: int = 1_000
 
     cell_dim: np.ndarray = np.array([100, 100], dtype=np.int32)
     cell_grid: np.ndarray = screen_dim // cell_dim
 
-    velocity_scale: float = 2.0
+    velocity_scale: float = 1.0
 
 
 class Colors:
     BLACK = (0, 0, 0)
     WHITE = (255, 255, 255)
+    GRAY = (200, 200, 200)
 
 
 class ParticleContainer:
@@ -45,9 +50,9 @@ class ParticleContainer:
         self.positions = positions
 
         if velocities is None:
-            velocities = settings.velocity_scale * np.random.normal(
-                size=(settings.n_particles, 2)
-            ).astype(np.float32)
+            velocities = settings.velocity_scale * np.random.normal(size=positions.shape).astype(
+                np.float32
+            )
         self.velocities = velocities
 
         pygame.init()
@@ -71,14 +76,7 @@ class ParticleContainer:
 
                 # TODO: Check collisions in neighboring cells.
                 positions, velocities = self.positions[cell_mask], self.velocities[cell_mask]
-
-                # TODO: 2D elastic collision math.
-                for i, pos in enumerate(positions):
-                    dists = ((positions[i:] - pos) ** 2.0).sum(axis=-1) ** 0.5
-                    too_close = dists < (2 * self.settings.particle_radius)
-                    velocities[i:][too_close] = np.roll(velocities[i:][too_close], shift=-1, axis=0)
-
-                self.velocities[cell_mask] = velocities
+                self.velocities[cell_mask] = self.true_collide(positions, velocities)
 
         # Handle wall collisions.
         outer_mask = ((cells == 0) | (cells == (settings.cell_grid - 1))).any(axis=-1)
@@ -92,33 +90,111 @@ class ParticleContainer:
         # Move particles.
         self.positions += self.velocities
 
+    def true_collide(self, positions: np.ndarray, velocities: np.ndarray) -> np.ndarray:
+        """True 2d elastic collision physics."""
+        # TODO: fix particles spinning.
+        dists = LA.norm(positions[:, None] - positions, axis=-1)
+
+        for i, j in zip(*np.where(dists < (2 * self.settings.particle_radius))):
+            if j <= i:
+                continue
+
+            unit_vector = (positions[j] - positions[i]) / (dists[i, j] + np.finfo(np.float32).eps)
+            new_parallel = (velocities[i] - velocities[j]).dot(unit_vector) * unit_vector
+            velocities[i] -= new_parallel
+            velocities[j] += new_parallel
+
+        return velocities
+
+    def swap_collide(self, positions: np.ndarray, velocities: np.ndarray) -> np.ndarray:
+        """Swap velocities on collision. Approximates all collisions as head-on."""
+        for i, pos in enumerate(positions):
+            dists = LA.norm(positions[i:] - pos, axis=-1)
+            too_close = dists < (2 * self.settings.particle_radius)
+            velocities[i:][too_close] = np.roll(velocities[i:][too_close], shift=-1, axis=0)
+        return velocities
+
     def draw_particles(self) -> None:
         for position in self.positions:
             pygame.draw.circle(
-                self.screen, Colors.BLACK, position.astype(np.int32), self.settings.particle_radius
+                self.screen, Colors.GRAY, position.astype(np.int32), self.settings.particle_radius
             )
 
     def simulate(self) -> None:
         cont = True
+        pause = True
+
         while cont:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     cont = False
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_SPACE:
+                        pause = not pause
 
             self.screen.fill(Colors.WHITE)
-
-            self.simulate_step()
             self.draw_particles()
-
+            if not pause:
+                self.simulate_step()
             pygame.display.flip()
+
             self.clock.tick(self.settings.max_frame_rate)
+            print(f"FPS={self.clock.get_fps():.4f}", end="\r")
 
     def close(self) -> None:
         pygame.quit()
 
+    def calc_kinetic_energy(self) -> float:
+        """Since there is no mass, just return sum(|v|^2)."""
+        return (LA.norm(self.velocities, axis=-1) ** 2.0).sum()
+
+
+def image_to_points(filename: str, settings: Settings) -> np.ndarray:
+    image = np.array(Image.open(filename).convert("L"), dtype=np.float32) / 255.0
+
+    gaussian_kernel = (
+        np.array(
+            [
+                [2, 4, 5, 4, 2],
+                [4, 9, 12, 9, 4],
+                [5, 12, 15, 12, 5],
+                [4, 9, 12, 9, 4],
+                [2, 4, 5, 4, 2],
+            ],
+            dtype=np.float32,
+        )
+        / 159
+    )
+    smoothed = convolve2d(image, gaussian_kernel, mode="valid")
+
+    sobel_v_kernel = np.array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]], dtype=np.float32)
+    sobel_v_convolved = convolve2d(smoothed, sobel_v_kernel, mode="valid")
+    sobel_h_convolved = convolve2d(smoothed, sobel_v_kernel.T, mode="valid")
+
+    convolved = ((sobel_v_convolved**2.0) + (sobel_h_convolved**2.0)) ** 0.5
+    image_points = np.stack(
+        tuple(reversed(np.where(convolved > np.percentile(convolved, 90)))), axis=-1
+    ).astype(np.float32)
+
+    points = image_points[
+        np.random.choice(np.arange(len(image_points)), size=settings.n_particles, replace=False)
+    ]
+    points = (
+        (points - points.min(axis=0))
+        / (points.max(axis=0) - points.min(axis=0))
+        * (settings.screen_dim - (2 * settings.particle_radius))
+    ) + settings.particle_radius
+    return points
+
 
 if __name__ == "__main__":
     settings = Settings()
-    particle_container = ParticleContainer(settings)
+
+    parser = ArgumentParser()
+    parser.add_argument("--image", required=False, help="Path of the image to use.")
+    image_file = parser.parse_args().image
+
+    points = image_to_points(image_file, settings) if image_file else None
+    particle_container = ParticleContainer(settings, positions=points)
     particle_container.simulate()
     particle_container.close()
