@@ -130,10 +130,14 @@ class ParticleContainer:
 
             pygame.display.flip()
             self.clock.tick(self.settings.max_frame_rate)
-            print(f"FPS: {self.clock.get_fps()}", end="\r")
+            print(f"FPS={self.clock.get_fps():.4f}", end="\r")
 
     def close(self) -> None:
         pygame.quit()
+
+    def calc_kinetic_energy(self) -> float:
+        """Since there is no mass, just return sum(|v|^2)."""
+        return (LA.norm(self.velocities, axis=-1) ** 2.0).sum()
 
 
 if __name__ == "__main__":
