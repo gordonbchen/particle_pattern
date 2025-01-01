@@ -11,15 +11,16 @@ from scipy.signal import convolve2d
 
 class Settings:
     screen_dim: np.ndarray = np.array([1_000, 800], dtype=np.int32)
-    max_frame_rate: int = 60
+    max_frame_rate: int = 120
 
     particle_radius: int = 5
-    n_particles: int = 1_000
+    n_particles: int = 500
 
     cell_dim: np.ndarray = np.array([100, 100], dtype=np.int32)
     cell_grid: np.ndarray = screen_dim // cell_dim
 
     velocity_scale: float = 1.0
+    time_step: float = 0.2
 
 
 class Colors:
@@ -89,11 +90,10 @@ class ParticleContainer:
         self.velocities[outer_mask] = outer_velocities
 
         # Move particles.
-        self.positions += self.velocities
+        self.positions += self.velocities * self.settings.time_step
 
     def true_collide(self, positions: np.ndarray, velocities: np.ndarray) -> np.ndarray:
         """True 2d elastic collision physics."""
-        # TODO: fix particles spinning.
         dists = LA.norm(positions[:, None] - positions, axis=-1)
 
         for i, j in zip(*np.where(dists < (2 * self.settings.particle_radius))):
