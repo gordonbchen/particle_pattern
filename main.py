@@ -100,10 +100,14 @@ class ParticleContainer:
             if j <= i:
                 continue
 
-            unit_vector = (positions[j] - positions[i]) / (dists[i, j] + np.finfo(np.float32).eps)
-            new_parallel = (velocities[i] - velocities[j]).dot(unit_vector) * unit_vector
-            velocities[i] -= new_parallel
-            velocities[j] += new_parallel
+            unit_vector = (positions[i] - positions[j]) / (dists[i, j] + np.finfo(np.float32).eps)
+            rel_velocity = (velocities[i] - velocities[j]).dot(unit_vector)
+
+            # Only handle collision if particles are moving towards each other.
+            if rel_velocity < 0:
+                new_parallel = rel_velocity * unit_vector
+                velocities[i] -= new_parallel
+                velocities[j] += new_parallel
 
         return velocities
 
