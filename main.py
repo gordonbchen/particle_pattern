@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from argparse import ArgumentParser
 from dataclasses import dataclass
 
 import numpy as np
 import numpy.linalg as LA
 import pygame
+from PIL import Image
+from scipy.signal import convolve2d
 
 
 @dataclass
@@ -13,7 +16,7 @@ class Settings:
     max_frame_rate: int = 60
 
     particle_radius: int = 5
-    n_particles: int = 300
+    n_particles: int = 1_000
 
     cell_dim: np.ndarray = np.array([100, 100], dtype=np.int32)
     cell_grid: np.ndarray = screen_dim // cell_dim
@@ -24,6 +27,7 @@ class Settings:
 class Colors:
     BLACK = (0, 0, 0)
     WHITE = (255, 255, 255)
+    GRAY = (200, 200, 200)
 
 
 class ParticleContainer:
@@ -46,9 +50,9 @@ class ParticleContainer:
         self.positions = positions
 
         if velocities is None:
-            velocities = settings.velocity_scale * np.random.normal(
-                size=(settings.n_particles, 2)
-            ).astype(np.float32)
+            velocities = settings.velocity_scale * np.random.normal(size=positions.shape).astype(
+                np.float32
+            )
         self.velocities = velocities
 
         pygame.init()
@@ -113,22 +117,27 @@ class ParticleContainer:
     def draw_particles(self) -> None:
         for position in self.positions:
             pygame.draw.circle(
-                self.screen, Colors.BLACK, position.astype(np.int32), self.settings.particle_radius
+                self.screen, Colors.GRAY, position.astype(np.int32), self.settings.particle_radius
             )
 
     def simulate(self) -> None:
         cont = True
+        pause = True
+
         while cont:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     cont = False
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_SPACE:
+                        pause = not pause
 
             self.screen.fill(Colors.WHITE)
-
-            self.simulate_step()
             self.draw_particles()
-
+            if not pause:
+                self.simulate_step()
             pygame.display.flip()
+
             self.clock.tick(self.settings.max_frame_rate)
             print(f"FPS={self.clock.get_fps():.4f}", end="\r")
 
@@ -140,8 +149,52 @@ class ParticleContainer:
         return (LA.norm(self.velocities, axis=-1) ** 2.0).sum()
 
 
+def image_to_points(filename: str, settings: Settings) -> np.ndarray:
+    image = np.array(Image.open(filename).convert("L"), dtype=np.float32) / 255.0
+
+    gaussian_kernel = (
+        np.array(
+            [
+                [2, 4, 5, 4, 2],
+                [4, 9, 12, 9, 4],
+                [5, 12, 15, 12, 5],
+                [4, 9, 12, 9, 4],
+                [2, 4, 5, 4, 2],
+            ],
+            dtype=np.float32,
+        )
+        / 159
+    )
+    smoothed = convolve2d(image, gaussian_kernel, mode="valid")
+
+    sobel_v_kernel = np.array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]], dtype=np.float32)
+    sobel_v_convolved = convolve2d(smoothed, sobel_v_kernel, mode="valid")
+    sobel_h_convolved = convolve2d(smoothed, sobel_v_kernel.T, mode="valid")
+
+    convolved = ((sobel_v_convolved**2.0) + (sobel_h_convolved**2.0)) ** 0.5
+    image_points = np.stack(
+        tuple(reversed(np.where(convolved > np.percentile(convolved, 90)))), axis=-1
+    ).astype(np.float32)
+
+    points = image_points[
+        np.random.choice(np.arange(len(image_points)), size=settings.n_particles, replace=False)
+    ]
+    points = (
+        (points - points.min(axis=0))
+        / (points.max(axis=0) - points.min(axis=0))
+        * (settings.screen_dim - (2 * settings.particle_radius))
+    ) + settings.particle_radius
+    return points
+
+
 if __name__ == "__main__":
     settings = Settings()
-    particle_container = ParticleContainer(settings)
+
+    parser = ArgumentParser()
+    parser.add_argument("--image", required=False, help="Path of the image to use.")
+    image_file = parser.parse_args().image
+
+    points = image_to_points(image_file, settings) if image_file else None
+    particle_container = ParticleContainer(settings, positions=points)
     particle_container.simulate()
     particle_container.close()
