@@ -88,21 +88,17 @@ class ParticleContainer:
 
     def true_collide(self, positions: np.ndarray, velocities: np.ndarray) -> np.ndarray:
         """True 2d elastic collision physics."""
-        # TODO: Fix particles spinning with each other.
-        for i, pos in enumerate(positions):
-            pos_delta = positions[i + 1 :] - pos
-            dists = LA.norm(pos_delta, axis=-1)
-            too_close_inds = np.where(dists < (2 * self.settings.particle_radius))[0]
-            if len(too_close_inds) == 0:
+        # TODO: fix particles spinning.
+        dists = LA.norm(positions[:, None] - positions, axis=-1)
+
+        for i, j in zip(*np.where(dists < (2 * self.settings.particle_radius))):
+            if j <= i:
                 continue
 
-            unit_vectors = pos_delta[too_close_inds] / (
-                dists[too_close_inds][:, None] + np.finfo(np.float32).eps
-            )
-            for j, u in zip(too_close_inds, unit_vectors):
-                new_parallel_comp = (velocities[i] - velocities[i + 1 :][j]).dot(u) * u
-                velocities[i] -= new_parallel_comp
-                velocities[i + 1 :][j] += new_parallel_comp
+            unit_vector = (positions[j] - positions[i]) / (dists[i, j] + np.finfo(np.float32).eps)
+            new_parallel = (velocities[i] - velocities[j]).dot(unit_vector) * unit_vector
+            velocities[i] -= new_parallel
+            velocities[j] += new_parallel
 
         return velocities
 
@@ -134,6 +130,7 @@ class ParticleContainer:
 
             pygame.display.flip()
             self.clock.tick(self.settings.max_frame_rate)
+            print(f"FPS: {self.clock.get_fps()}", end="\r")
 
     def close(self) -> None:
         pygame.quit()
