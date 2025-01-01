@@ -59,7 +59,7 @@ class ParticleContainer:
         self.clock = pygame.time.Clock()
 
     # TODO: make simulation perfectly reversible.
-    def simulate_step(self, reverse: bool = False) -> None:
+    def simulate_step(self) -> None:
         # Handle particle collisions.
         cells = (
             (self.positions // self.settings.cell_dim)
@@ -83,15 +83,13 @@ class ParticleContainer:
         too_low = (outer_positions - self.settings.particle_radius) < 0
         too_high = (outer_positions + self.settings.particle_radius) > self.settings.screen_dim
 
-        # TODO: fix wall collision for reverse.
-        # reverse_mask = (too_low & (outer_velocities < 0)) | (too_high & (outer_velocities > 0))
-        reverse_mask = too_low | too_high
+        reverse_mask = (too_low & (outer_velocities < 0)) | (too_high & (outer_velocities > 0))
 
         outer_velocities[reverse_mask] *= -1.0
         self.velocities[outer_mask] = outer_velocities
 
         # Move particles.
-        self.positions += self.velocities * ((-1) ** (reverse))
+        self.positions += self.velocities
 
     def true_collide(self, positions: np.ndarray, velocities: np.ndarray) -> np.ndarray:
         """True 2d elastic collision physics."""
@@ -117,6 +115,9 @@ class ParticleContainer:
             velocities[i:][too_close] = np.roll(velocities[i:][too_close], shift=-1, axis=0)
         return velocities
 
+    def reverse_velocities(self) -> None:
+        self.velocities *= -1
+
     def draw_particles(self) -> None:
         for position in self.positions:
             pygame.draw.circle(
@@ -126,7 +127,6 @@ class ParticleContainer:
     def simulate(self) -> None:
         cont = True
         pause = True
-        reverse = False
 
         while cont:
             for event in pygame.event.get():
@@ -136,12 +136,12 @@ class ParticleContainer:
                     if event.key == pygame.K_SPACE:
                         pause = not pause
                     if event.key == pygame.K_r:
-                        reverse = not reverse
+                        self.reverse_velocities()
 
             self.screen.fill(Colors.WHITE)
             self.draw_particles()
             if not pause:
-                self.simulate_step(reverse)
+                self.simulate_step()
             pygame.display.flip()
 
             self.clock.tick(self.settings.max_frame_rate)
