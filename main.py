@@ -19,8 +19,7 @@ class Settings:
     cell_dim: np.ndarray = np.array([100, 100], dtype=np.int32)
     cell_grid: np.ndarray = screen_dim // cell_dim
 
-    velocity_scale: float = 1.0
-    time_step: float = 0.2
+    velocity_scale: float = 64.0  # pix / sec.
 
 
 class Colors:
@@ -89,7 +88,7 @@ class ParticleContainer:
         self.velocities[outer_mask] = outer_velocities
 
         # Move particles.
-        self.positions += self.velocities * self.settings.time_step
+        self.positions += self.velocities * (self.clock.get_time() / 1_000.0)
 
     def collide(self, positions: np.ndarray, velocities: np.ndarray) -> np.ndarray:
         """2d elastic collision physics."""
