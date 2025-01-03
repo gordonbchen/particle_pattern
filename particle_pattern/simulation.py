@@ -2,7 +2,7 @@ import numpy as np
 import numpy.linalg as LA
 
 
-class SimulationSettings:
+class SimSettings:
     wall_bounds: np.ndarray = np.array([1_000, 800], dtype=np.int32)
 
     particle_radius: int = 5
@@ -12,10 +12,7 @@ class SimulationSettings:
 
 
 def simulate_step(
-    positions: np.ndarray,
-    velocities: np.ndarray,
-    settings: SimulationSettings,
-    delta_time_sec: float,
+    positions: np.ndarray, velocities: np.ndarray, settings: SimSettings, delta_time_sec: float
 ) -> tuple[np.ndarray, np.ndarray]:
     """Make a simulation step. Return new positions and velocities."""
     # TODO: make simulation perfectly reversible.
