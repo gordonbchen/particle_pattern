@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from argparse import ArgumentParser, Namespace
+from pathlib import Path
 
+import matplotlib.animation as anim
+import matplotlib.pyplot as plt
 import numpy as np
 import numpy.linalg as LA
 import pygame
@@ -189,7 +192,81 @@ def parse_args() -> Namespace:
         default=50.0,
         help="Velocity multiplier (velocity_scale * normal_dist) to init random velocities.",
     )
+    parser.add_argument(
+        "--output_path",
+        required=False,
+        default="outputs/particle_sim.mp4",
+        help="Output path of the particle simulation animation.",
+    )
+    parser.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Run in interactive game mode instead of creating a fixed animation.",
+    )
     return parser.parse_args()
+
+
+def create_animation(
+    positions: np.ndarray,
+    velocities: np.ndarray,
+    settings: SimSettings,
+    output_path: Path,
+    backward_time: float = 8.0,
+    slow_time: float = 3.0,
+    slowdown_factor: float = 0.5,
+    stop_time: float = 1.0,
+    forward_time: float = 7.0,
+    frame_rate: int = 30,
+) -> None:
+    """
+    Create an animation for particles making a pattern from seeming randomness.
+
+    BUG: Since the simulation is not perfectly reversible, this animation is fake.
+    If we initialized from where the reverse process ended, we would get
+    positions that don't equal the original values.
+    """
+    backward_frames = int(backward_time * frame_rate)
+    forward_frames = int(forward_time * frame_rate)
+    slow_backward_frames = int(slow_time * frame_rate) // 2
+    stop_frames = int(stop_time * frame_rate)
+    total_frames = backward_frames + stop_frames + forward_frames
+
+    og_positions, og_velocities = positions.copy(), velocities.copy()
+    frames = np.empty((total_frames,) + og_positions.shape, dtype=np.float32)
+
+    normal_delta_time = 1.0 / frame_rate
+    slow_delta_time = normal_delta_time * slowdown_factor
+
+    velocities = reverse_velocities(velocities)
+    for i in range(backward_frames):
+        dt = slow_delta_time if (i < slow_backward_frames) else normal_delta_time
+        positions, velocities = simulate_step(positions, velocities, settings, dt)
+        frames[backward_frames - 1 - i] = positions.copy()
+
+    positions, velocities = og_positions, og_velocities
+    for i in range(stop_frames):
+        frames[backward_frames + i] = positions.copy()
+
+    for i in range(forward_frames):
+        dt = slow_delta_time if (i < slow_backward_frames) else normal_delta_time
+        positions, velocities = simulate_step(positions, velocities, settings, dt)
+        frames[backward_frames + stop_frames + i] = positions.copy()
+
+    # Plot animation.
+    fig, ax = plt.subplots(figsize=(settings.wall_bounds // 100))
+    ax.invert_yaxis()
+    ax.set_xlim(0, settings.wall_bounds[0])
+    ax.set_ylim(settings.wall_bounds[1], 0)
+
+    img = ax.scatter(
+        og_positions[:, 0], og_positions[:, 1], s=settings.particle_radius * 2, c="blue"
+    )
+
+    def update_anim(frame: int):
+        img.set_offsets(frames[frame])
+
+    animation = anim.FuncAnimation(fig, func=update_anim, frames=total_frames)
+    animation.save(output_path, fps=frame_rate)
 
 
 if __name__ == "__main__":
@@ -207,4 +284,9 @@ if __name__ == "__main__":
 
     velocities = get_random_velocities(args.velocity_scale, positions.shape)
 
-    run_game_sim(settings, positions, velocities)
+    if args.interactive:
+        run_game_sim(settings, positions, velocities)
+    else:
+        output_path = Path(args.output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        create_animation(positions, velocities, settings, output_path)
