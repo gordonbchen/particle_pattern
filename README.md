@@ -1,6 +1,8 @@
 # particle_pattern
 Creating patterns with particle simulations.
 
+https://github.com/user-attachments/assets/dfe322b9-1443-40c4-9777-01b50d73ac06
+
 Simulates 2D elastic collisions between equal-mass and equal-sized particles. Particle positions can be initialized by drawing, from the edges of a given image (convolutional edge detector), or randomly. Simulation can be run in interactive game mode, where the user can reverse time and pause, or as an animation creator. 
 
 Inspired by [MarbleScience Message Defying Entropy](https://marblescience.com/message-defying-entropy).
